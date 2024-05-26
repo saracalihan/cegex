@@ -1,9 +1,9 @@
-FLAGS= -ggdb -Wall -Wextra
+FLAGS= -ggdb -Wall -Wextra -std=gnu99
 
 all: compile run
 
 compile: src/main.c  
-		cc src/main.c ${FLAGS} -o ./build/main
+		gcc src/main.c ${FLAGS} -o ./build/main
 
 run:
 		./build/main

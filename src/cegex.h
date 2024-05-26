@@ -3,6 +3,7 @@
 
 #include<string.h>
 #include<stdlib.h>
+#include<stdbool.h>
 
 #include "da.h"
 
@@ -26,6 +27,7 @@ typedef enum{
     TOKEN_CHAR,           // a
     TOKEN_STAR,           // *
     TOKEN_PLUS,           // +
+    TOKEN_CARET,          // ^
     TOKEN_QUESTION,       // ?
     TOKEN_L_ROUND_PAREN,  // (
     TOKEN_R_ROUND_PAREN,  // )
@@ -49,7 +51,7 @@ typedef struct {
 
 // Convert given regex to Token dynamic array
 Tokens* tokenize(char* regex){
-  int length = strlen(regex);
+  size_t length = strlen(regex);
   Tokens* tokens= malloc(sizeof(Tokens));
   if(NULL == tokens){
     CEGEX_ERROR("Regex tokenizer tokens malloc error!");
@@ -83,6 +85,8 @@ Tokens* tokenize(char* regex){
         break;
       case '|':
         token.type = TOKEN_PIPE;
+      case '^':
+        token.type = TOKEN_CARET;
         break;
       case '.':
         token.type = TOKEN_DOT;
@@ -112,6 +116,7 @@ Tokens* tokenize(char* regex){
 
 typedef enum {
   ZERO_OR_ONE,
+  ZERO_OR_MANY,
   ONLY_ONE,
   ONE_OR_MANY,
 } Quantifier;
@@ -120,6 +125,7 @@ typedef enum{
   WILDCHARD,      // .
   ELEMENT,        // a b c
   GROUP_ELEMENT,  // ( )
+  LINE_POSITION   // ^ $
 } ElementType;
 
 
@@ -145,7 +151,6 @@ struct Element_t{
 };
 
 Element element_init(){
-  Element e;
   return (Element){
     .type= ELEMENT,
     .quantifier= ZERO_OR_ONE,
@@ -183,7 +188,7 @@ Stack parse(Tokens *tokens){
   Scope fs = scope_create();
   DA_PUSH(stack, fs);
 
-  for(int i=0; i<tokens->count; i++){
+  for(int i=0; (size_t)i<tokens->count; i++){
     Token token = tokens->items[i];
     Scope* currentScope = stack_get_last_scope(&stack);
 
@@ -221,7 +226,7 @@ Stack parse(Tokens *tokens){
             CEGEX_ERROR("Parse Error: * operator must be using after element or group\n",i);
             exit(1);
           }
-          lEl->quantifier = ZERO_OR_ONE;
+          lEl->quantifier = ZERO_OR_MANY;
           continue;
       case TOKEN_PLUS:
           Element *lEl2 = &DA_GET_LAST(*currentScope);
@@ -231,6 +236,10 @@ Stack parse(Tokens *tokens){
           }
           lEl2->quantifier = ONE_OR_MANY;
           continue;
+      case TOKEN_CARET:
+        el.type = LINE_POSITION;
+        el.quantifier = ONLY_ONE;
+        break;
       default:
         el.type = ELEMENT;
         el.value = token.value;
@@ -243,19 +252,96 @@ Stack parse(Tokens *tokens){
 
 // PERSER END
 
+// MATCH START
+CegexValue match(Stack *s, char* text);
 
-CegexValue match(Stack*s, char* text){
+int element_match_str(Element el, char* text, size_t index){
+  if(index>strlen(text)){
+    return -1;
+  }
+
+  if(el.type == WILDCHARD){
+    return 1;
+  }
+
+  if(el.type == ELEMENT){
+    return el.value == text[index] ? 1 : -1;
+  }
+  if(el.type == GROUP_ELEMENT){
+    return match(&el.stack, &text[index]).index;
+  }
+  CEGEX_ERROR("Unsupported element type!");
+}
+
+CegexValue match(Stack *s, char* text){
   CegexValue res ={0};
-
+  int i=0;
   do{
     Scope currentScope = DA_SHIFT(*s);
 
+    Element el = DA_SHIFT(currentScope);
     while(currentScope.count >=1){
-      Element el = DA_SHIFT(currentScope);
-
-      // match conditions here
+      switch(el.quantifier){
+        case ONLY_ONE:
+          int in = element_match_str(el, text, i);
+          if(-1 == in){
+            res.index = -1;
+            res.length = 0;
+            return res;
+          }
+          i+=in;
+          res.length++;
+          break;
+        case ZERO_OR_ONE:
+          if(i>= strlen(text)){
+            res.length++;
+            break;
+          }
+          int in2 = element_match_str(el, text, i);
+          if(in2>0){ // step over
+            i+=in2;
+          }
+          res.length++;
+          break;
+        case ZERO_OR_MANY:
+          while(true){
+            int in3 = element_match_str(el, text, i);
+            if(i>= strlen(text)){
+              break;
+            }
+            if(in3 == -1){ // zero
+              // currentScope = DA_SHIFT(*s);
+              break;
+            }
+            i+=in3;
+            res.length++;
+          }
+          break;
+        case ONE_OR_MANY:
+          int in4 = element_match_str(el, text, i);
+          if(-1 == in4){ // zero
+            res.index= -1;
+            res.length = 0;
+            return res;
+          }
+          while(true){
+            // if(in4 !=0){ // we increment it after the case
+            //   res.length--;
+            // }
+            in4 = element_match_str(el, text, i);
+            if(-1==in4){
+              break;
+            }
+            i+=in4;
+            res.length++;
+          }
+          break;
+      }
+      el = DA_SHIFT(currentScope);
     }
   }while(s->count >=1);
+
+  res.index =i;
   return res;
 }
 //

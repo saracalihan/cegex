@@ -32,7 +32,13 @@ do{\
 #define DA_POP(da) ((da).items[--(da).count])
 
 #define DA_SHIFT(da) \
-    ((da).count > 0 ? memmove((da).items, (da).items + 1, --(da).count * sizeof(*(da).items)), (da).items[0])
+({ \
+    typeof((da).items[0]) res =(da).items[0]; \
+    if((da).count > 0){ \
+        memmove((da).items, (da).items + 1, --(da).count * sizeof(*(da).items));\
+    }\
+    res; \
+})
 
 #define DA_UNSHIFT(da, item) \
 do { \
