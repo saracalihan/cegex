@@ -29,7 +29,7 @@ do{\
   (da).items[(da).count++] = data; \
 } while(0);
 
-#define DA_POP(da) ((da).items[--(da).count])
+#define DA_POP(da) ((da).items[--((da).count)])
 
 #define DA_SHIFT(da) \
 ({ \
@@ -50,7 +50,7 @@ do { \
 
 #define DA_REMOVE(da, index) \
 do { \
-    if ((index) < (da).count) { \
+    if ((size_t)(index) < (da).count) { \
         memmove((da).items + (index), (da).items + (index) + 1, ((da).count - (index) - 1) * sizeof(*(da).items)); \
         (da).count--; \
     } \
@@ -73,5 +73,7 @@ do { \
     } \
 } while(0)
 #endif
+
+#define DA_GET(da, index) ((da).items[index])
 
 #define DA_GET_LAST(da) ((da).items[(da).count -1])
